@@ -1,3 +1,5 @@
+/// The `Node` defines the basic unit of work with `prep`, `exec`, and `post` methods.
+/// We use a vtable to create a generic interface.
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 

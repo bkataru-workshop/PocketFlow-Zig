@@ -1,3 +1,4 @@
+/// The `Context` is a thread-safe hash map that holds the shared state between nodes.
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const StringHashMap = std.StringHashMap;
