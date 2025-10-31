@@ -12,9 +12,11 @@ pub const Node = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        prep: fn (self: *anyopaque, allocator: Allocator, context: *Context) anyerror!*anyopaque,
-        exec: fn (self: *anyopaque, allocator: Allocator, prep_res: *anyopaque) anyerror!*anyopaque,
-        post: fn (self: *anyopaque, allocator: Allocator, context: *Context, prep_res: *anyopaque, exec_res: *anyopaque) anyerror!Action,
+        prep: *const fn (self: *anyopaque, allocator: Allocator, context: *Context) anyerror!*anyopaque,
+        exec: *const fn (self: *anyopaque, allocator: Allocator, prep_res: *anyopaque) anyerror!*anyopaque,
+        post: *const fn (self: *anyopaque, allocator: Allocator, context: *Context, prep_res: *anyopaque, exec_res: *anyopaque) anyerror!Action,
+        cleanup_prep: *const fn (self: *anyopaque, allocator: Allocator, prep_res: *anyopaque) void,
+        cleanup_exec: *const fn (self: *anyopaque, allocator: Allocator, exec_res: *anyopaque) void,
     };
 
     pub fn prep(self: Node, allocator: Allocator, context: *Context) !*anyopaque {
@@ -27,6 +29,14 @@ pub const Node = struct {
 
     pub fn post(self: Node, allocator: Allocator, context: *Context, prep_res: *anyopaque, exec_res: *anyopaque) !Action {
         return self.vtable.post(self.self, allocator, context, prep_res, exec_res);
+    }
+
+    pub fn cleanupPrep(self: Node, allocator: Allocator, prep_res: *anyopaque) void {
+        self.vtable.cleanup_prep(self.self, allocator, prep_res);
+    }
+
+    pub fn cleanupExec(self: Node, allocator: Allocator, exec_res: *anyopaque) void {
+        self.vtable.cleanup_exec(self.self, allocator, exec_res);
     }
 };
 

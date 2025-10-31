@@ -3,22 +3,20 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const StringHashMap = std.StringHashMap;
 
-// this is an interface that structs can implement contracts for
-const Value = struct {
-    init: *const fn (anytype) anyerror!Value,
-    destroy: *const fn () void,
-    to: *const fn (type) anyerror!type,
+const StoredValue = struct {
+    ptr: *anyopaque,
+    destructor: *const fn (allocator: Allocator, ptr: *anyopaque) void,
 };
 
 pub const Context = struct {
     allocator: Allocator,
-    data: StringHashMap(Value),
+    data: StringHashMap(StoredValue),
     mutex: std.Thread.Mutex,
 
     pub fn init(allocator: Allocator) Context {
         return .{
             .allocator = allocator,
-            .data = StringHashMap(Value).init(allocator),
+            .data = StringHashMap(StoredValue).init(allocator),
             .mutex = .{},
         };
     }
@@ -27,10 +25,12 @@ pub const Context = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        var it = self.data.iterator();
-        while (it.next()) |entry| {
-            entry.value_ptr.destroy();
+        // Free all stored values using their destructors
+        var key_it = self.data.iterator();
+        while (key_it.next()) |entry| {
+            entry.value_ptr.destructor(self.allocator, entry.value_ptr.ptr);
         }
+
         self.data.deinit();
     }
 
@@ -38,10 +38,9 @@ pub const Context = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        if (self.data.get(key)) |val| {
-            return val.to(T) catch |err| {
-                std.debug.print("Type mismatch for key '{s}': {any}\n", .{ key, err });
-            };
+        if (self.data.get(key)) |stored_value| {
+            const typed_ptr: *const T = @ptrCast(@alignCast(stored_value.ptr));
+            return typed_ptr.*;
         }
         return null;
     }
@@ -50,7 +49,31 @@ pub const Context = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        const val = try Value.init(value);
-        try self.data.put(key, val);
+        const T = @TypeOf(value);
+
+        // Check if we're replacing an existing value
+        if (self.data.get(key)) |old_stored_value| {
+            old_stored_value.destructor(self.allocator, old_stored_value.ptr);
+        }
+
+        // Always allocate space for T and store a pointer to it
+        // This ensures consistent storage regardless of T being a pointer, struct, slice, etc.
+        const ptr = try self.allocator.create(T);
+        ptr.* = value;
+
+        // Create a destructor function for this type
+        const destructor = struct {
+            fn destroy(allocator: Allocator, p: *anyopaque) void {
+                const typed_ptr: *T = @ptrCast(@alignCast(p));
+                allocator.destroy(typed_ptr);
+            }
+        }.destroy;
+
+        const stored_value = StoredValue{
+            .ptr = @ptrCast(ptr),
+            .destructor = destructor,
+        };
+
+        try self.data.put(key, stored_value);
     }
 };

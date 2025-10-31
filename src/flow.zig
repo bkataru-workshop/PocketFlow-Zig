@@ -22,10 +22,10 @@ pub const Flow = struct {
 
         while (current_node) |node| {
             const prep_res = try node.prep(self.allocator, context);
-            defer if (prep_res != null) self.allocator.destroy(prep_res);
+            defer node.cleanupPrep(self.allocator, prep_res);
 
             const exec_res = try node.exec(self.allocator, prep_res);
-            defer if (exec_res != null) self.allocator.destroy(exec_res);
+            defer node.cleanupExec(self.allocator, exec_res);
 
             const action = try node.post(self.allocator, context, prep_res, exec_res);
 
