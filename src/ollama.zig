@@ -166,10 +166,18 @@ pub const Ollama = struct {
         });
         defer req.deinit();
 
+        // Set transfer encoding to content-length (automatically sets Content-Length header)
+        req.transfer_encoding = .{ .content_length = request_body.len };
+
         std.debug.print("Generate: Sending body of length: {}\n", .{request_body.len});
-        const bytes_sent = try req.sendBody(request_body);
-        try req.finish();
-        std.debug.print("Generate: Sent {} bytes and finalized\n", .{bytes_sent});
+
+        // Send the request body using the BodyWriter API
+        var body_writer = try req.sendBody(&.{});
+        try body_writer.writer.writeAll(request_body);
+        try body_writer.end();
+
+        std.debug.print("Generate: Body sent successfully\n", .{});
+
         var response = try req.receiveHead(&.{});
 
         if (response.head.status != .ok) {
@@ -199,7 +207,7 @@ pub const Ollama = struct {
         const obj = parsed.value.object;
         const response_text = obj.get("response").?.string;
         const model_name = obj.get("model").?.string;
-        const done = obj.get("done").?.boolean;
+        const done = obj.get("done").?.bool;
 
         return GenerateResponse{
             .response = try self.allocator.dupe(u8, response_text),
@@ -390,7 +398,7 @@ pub const Ollama = struct {
     }
 
     /// Helper function to escape JSON strings
-    fn jsonEscape(self: *Ollama, buffer: *std.ArrayList(u8), text: []const u8) !void {
+    fn jsonEscape(self: *Ollama, buffer: *std.ArrayListUnmanaged(u8), text: []const u8) !void {
         for (text) |c| {
             switch (c) {
                 '"' => try buffer.appendSlice(self.allocator, "\\\""),
